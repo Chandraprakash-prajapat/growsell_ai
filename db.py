@@ -49,6 +49,12 @@ def init_db():
                             shipping_cost REAL,
                             return_charge REAL,
                             resalable INTEGER)""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS action_items (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            created_at TEXT,
+                            title TEXT,
+                            expected_saving REAL,
+                            status TEXT DEFAULT 'open')""")
         conn.commit()
         conn.close()
         logger.debug("Database tables ready")
@@ -106,6 +112,32 @@ def setup_database():
     """Create the tables and add sample data. Safe to call many times."""
     init_db()
     seed_sample_data()
+
+
+def add_action_item(title, expected_saving=0):
+    """Save a to-do item suggested by the agent. Skips it if the same title already exists."""
+    try:
+        conn = connect()
+        exists = conn.execute("SELECT 1 FROM action_items WHERE title = ?", (title,)).fetchone()
+        if not exists:
+            conn.execute("INSERT INTO action_items (created_at, title, expected_saving) VALUES (?, ?, ?)",
+                         (date.today().isoformat(), title, expected_saving))
+            conn.commit()
+            logger.info(f"Action item saved: {title}")
+        conn.close()
+        return not exists
+    except Exception as e:
+        raise CustomException(e, sys)
+
+
+def get_action_items():
+    """Return all saved action items, newest first."""
+    conn = connect()
+    rows = conn.execute("SELECT * FROM action_items ORDER BY id DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 
 
 if __name__ == "__main__":
