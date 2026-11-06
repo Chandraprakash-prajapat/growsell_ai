@@ -1,3 +1,8 @@
+"""SQLite database: products and orders (with sample data).
+
+This is SAMPLE (fake) data for demo purposes only, not real business data.
+Run:  uv run python db.py
+"""
 import os
 import random
 import sqlite3
@@ -138,6 +143,20 @@ def get_action_items():
     return [dict(r) for r in rows]
 
 
+def set_action_status(item_id, status):
+    """Change the status of one action item, for example 'open' or 'done'."""
+    conn = connect()
+    conn.execute("UPDATE action_items SET status = ? WHERE id = ?", (status, item_id))
+    conn.commit()
+    conn.close()
+
+
+def clear_action_items():
+    """Delete all action items."""
+    conn = connect()
+    conn.execute("DELETE FROM action_items")
+    conn.commit()
+    conn.close()
 
 
 if __name__ == "__main__":
@@ -154,6 +173,3 @@ if __name__ == "__main__":
                              GROUP BY p.id ORDER BY p.id"""):
         print(f"{r['name']:<26} orders={r['orders']:<3} rto={r['rto']:<2} customer_return={r['cust_return']}")
     conn.close()
-
-
-    # Run:  uv run python db.py

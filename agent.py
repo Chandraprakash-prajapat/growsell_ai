@@ -1,3 +1,8 @@
+"""The AI agent: an LLM that decides which tools to run, reads the results and saves action items.
+
+All money math is done by our Python functions (tools). The LLM only explains and advises.
+Run:  uv run python agent.py
+"""
 import json
 import os
 import sys
@@ -14,7 +19,7 @@ load_dotenv()
 logger = get_logger(__name__)
 
 MODEL = "openai/gpt-oss-20b"
-MAX_STEPS = 8          # safety limit: the agent cannot loop forever
+MAX_STEPS = 15         # safety limit: the agent cannot loop forever
 
 SYSTEM_PROMPT = """You are a business advisor for an Indian e-commerce seller who sells photo frames on Meesho.
 Goal: find where the seller loses money and how to increase profit.
@@ -24,6 +29,15 @@ Rules:
 - Write every amount in Indian rupees using the symbol ₹ (never $).
 - First look at the overall profit, then the profit and the return loss for each product.
 - Use simulate_return_reduction to estimate how much money a suggestion can save.
+- When several tools do not depend on each other, call them together in the same step.
+- Suggestions must be specific to the numbers you see. Typical levers: better packaging for products
+  with high damage loss; making custom frames only after the customer confirms a preview (custom frames
+  cannot be resold, so their RTO loss is the full product cost); fixing the products with the highest
+  return rate or lowest margin.
+- Call several independent tools together in one step to save time.
+- Suggestions must be concrete and based on the data. Useful ideas: better packaging when the damaged loss is high,
+  asking the customer to confirm the preview before making a custom frame when the RTO loss is high,
+  fixing the product that has the highest return rate.
 - For each of your top 3 suggestions, call save_action_item once.
 - Finish with a short report in English with exactly these parts:
   **Biggest problem** (1-2 sentences with numbers)
@@ -34,15 +48,15 @@ Rules:
 
 # ---------- Tools (plain Python functions the agent can call) ----------
 
-def tool_get_profit_summary():
+def tool_get_profit_summary(**_):
     return profit_summary()
 
 
-def tool_get_profit_by_product():
+def tool_get_profit_by_product(**_):
     return profit_by_product()
 
 
-def tool_get_return_loss_by_product():
+def tool_get_return_loss_by_product(**_):
     return return_loss_by_product()
 
 
@@ -125,7 +139,11 @@ def run_agent(task="Analyze my business and tell me how to increase my profit.")
                 result = run_tool(call.function.name, call.function.arguments)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
 
-        return "The agent stopped because it reached the step limit.", tools_used
+        # Step limit reached: ask for the final report without allowing more tools
+        messages.append({"role": "user", "content": "Write the final report now, using only the numbers you already have."})
+        final = client.chat.completions.create(model=MODEL, messages=messages).choices[0].message
+        logger.info("Agent hit the step limit, final report was forced")
+        return final.content, tools_used
     except Exception as e:
         raise CustomException(e, sys)
 
@@ -135,5 +153,3 @@ if __name__ == "__main__":
     print("Tools used:", used)
     print()
     print(report)
-    
-# Run:  uv run python agent.py
