@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 
 def get_orders():
-    """All orders with product details."""
+    """Return all orders together with their product details."""
     conn = connect()
     rows = conn.execute("""SELECT o.id, o.status, o.shipping_cost, o.return_charge, o.resalable,
                                   p.id AS product_id, p.name, p.selling_price,
@@ -19,20 +19,25 @@ def get_orders():
 
 
 def order_result(order):
-    """Ek order ka hisaab: kitni bikri, kitna profit, kitna nuksaan."""
+    """Calculate one order: sales, profit and loss.
+
+    delivered       -> profit = price - manufacturing - packaging - shipping
+    rto             -> loss = product cost, only if the frame cannot be resold (custom frames)
+    customer_return -> loss = return charge (+ product cost if damaged or custom)
+    """
     made_cost = order["manufacturing_cost"] + order["packaging_cost"]
     if order["status"] == "delivered":
         profit = order["selling_price"] - made_cost - order["shipping_cost"]
         return {"sales": order["selling_price"], "profit": profit, "loss": 0}
     if order["status"] == "rto":
-        loss = 0 if order["resalable"] else made_cost             # custom frame dobara nahi bikta
+        loss = 0 if order["resalable"] else made_cost
     else:                                                         # customer_return
         loss = order["return_charge"] + (0 if order["resalable"] else made_cost)
     return {"sales": 0, "profit": -loss, "loss": loss}
 
 
 def profit_summary():
-    """Poore business ka hisaab."""
+    """Return the overall numbers for the whole business."""
     try:
         orders = get_orders()
         s = {"total_orders": len(orders), "delivered": 0, "rto": 0, "customer_return": 0,
@@ -40,8 +45,8 @@ def profit_summary():
         for order in orders:
             result = order_result(order)
             s[order["status"]] += 1
-            s["dashboard_sales"] += order["selling_price"]       # dashboard par dikhne wali bikri
-            s["sales"] += result["sales"]                        # asli bikri (delivered)
+            s["dashboard_sales"] += order["selling_price"]       # sales as the dashboard shows them (all orders)
+            s["sales"] += result["sales"]                        # actual sales (delivered orders only)
             s["return_loss"] += result["loss"]
             if order["status"] == "delivered":
                 s["delivered_profit"] += result["profit"]
@@ -54,7 +59,7 @@ def profit_summary():
 
 
 def profit_by_product():
-    """Har product ka hisaab (sabse zyada munafa wala upar)."""
+    """Return the numbers for each product, most profitable first."""
     try:
         products = {}
         for order in get_orders():
@@ -83,4 +88,8 @@ if __name__ == "__main__":
     print(f"Orders: {s['total_orders']} | Delivered {s['delivered']} | RTO {s['rto']} | Customer Return {s['customer_return']}")
     print()
     for p in profit_by_product():
-        print(f"{p['name']:<26} munafa={p['net_profit']:<8} margin={p['margin_pct']}%  rto={p['rto']} customer_return={p['customer_return']}")
+        print(f"{p['name']:<26} profit={p['net_profit']:<8} margin={p['margin_pct']}%  rto={p['rto']} customer_return={p['customer_return']}")
+        
+
+
+# Run:  uv run python calculations.py 

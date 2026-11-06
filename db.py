@@ -1,8 +1,3 @@
-"""SQLite database: products aur orders (sample data ke saath).
-
-Ye SAMPLE (nakli) data hai, sirf demo ke liye. Asli business ka data nahi.
-Run:  uv run python db.py
-"""
 import os
 import random
 import sqlite3
@@ -17,7 +12,8 @@ logger = get_logger(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "growsell.db")
 
-# (naam, bikri price, banane ka kharcha, packaging, custom hai?, RTO rate, customer return rate, damage rate)
+# (name, selling price, manufacturing cost, packaging cost, is custom,
+#  RTO rate, customer return rate, damage rate)
 SAMPLE_PRODUCTS = [
     ("6x8 Wooden Frame", 399, 150, 20, 0, 0.05, 0.04, 0.25),
     ("8x10 Wooden Frame", 549, 210, 25, 0, 0.06, 0.06, 0.30),
@@ -28,13 +24,14 @@ SAMPLE_PRODUCTS = [
 
 
 def connect():
+    """Open a connection to the SQLite file."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
-    """Tables banata hai (pehle se hon to kuch nahi karta)."""
+    """Create the tables if they do not exist yet."""
     try:
         conn = connect()
         conn.execute("""CREATE TABLE IF NOT EXISTS products (
@@ -54,23 +51,24 @@ def init_db():
                             resalable INTEGER)""")
         conn.commit()
         conn.close()
-        logger.info("Database tables ready")
+        logger.debug("Database tables ready")
     except Exception as e:
         raise CustomException(e, sys)
 
 
 def seed_sample_data(num_orders=200):
-    """Khali database me sample products aur orders daalta hai.
+    """Insert sample products and orders if the database is empty.
 
-    status: delivered / rto / customer_return
-    rto             : order delivery se pehle cancel (return charge nahi, par bana hua maal)
-    customer_return : customer ne delivery ke baad return kiya (lagbhag Rs 200 charge)
+    Order status values:
+      delivered       - the customer received the order
+      rto             - cancelled before delivery (no return charge, but the product is already made)
+      customer_return - returned by the customer after delivery (about Rs 200 charge)
     """
     try:
         conn = connect()
         if conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] > 0:
             conn.close()
-            logger.info("Sample data pehle se hai")
+            logger.debug("Sample data already exists")
             return
 
         for name, price, mfg, pack, is_custom, _, _, _ in SAMPLE_PRODUCTS:
@@ -78,7 +76,7 @@ def seed_sample_data(num_orders=200):
                          "VALUES (?, ?, ?, ?, ?)", (name, price, mfg, pack, is_custom))
 
         product_ids = [r["id"] for r in conn.execute("SELECT id FROM products ORDER BY id")]
-        rng = random.Random(42)                      # har baar wahi sample data
+        rng = random.Random(42)                      # fixed seed: same sample data every time
         start = date(2026, 9, 1)
         for _ in range(num_orders):
             i = rng.randrange(len(SAMPLE_PRODUCTS))
@@ -87,7 +85,7 @@ def seed_sample_data(num_orders=200):
             chance = rng.random()
             if chance < rto_rate:                                    # RTO
                 status, shipping, return_charge = "rto", 0, 0
-                resalable = 0 if is_custom else 1                    # custom frame dobara nahi bik sakta
+                resalable = 0 if is_custom else 1                    # a custom frame cannot be resold
             elif chance < rto_rate + return_rate:                    # customer return
                 status, shipping, return_charge = "customer_return", 0, rng.randint(180, 220)
                 damaged = rng.random() < damage_rate
@@ -104,9 +102,14 @@ def seed_sample_data(num_orders=200):
         raise CustomException(e, sys)
 
 
-if __name__ == "__main__":
+def setup_database():
+    """Create the tables and add sample data. Safe to call many times."""
     init_db()
     seed_sample_data()
+
+
+if __name__ == "__main__":
+    setup_database()
     conn = connect()
     print("products:", conn.execute("SELECT COUNT(*) FROM products").fetchone()[0])
     print("orders  :", conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0])
@@ -119,3 +122,6 @@ if __name__ == "__main__":
                              GROUP BY p.id ORDER BY p.id"""):
         print(f"{r['name']:<26} orders={r['orders']:<3} rto={r['rto']:<2} customer_return={r['cust_return']}")
     conn.close()
+
+
+    # Run:  uv run python db.py
