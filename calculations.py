@@ -78,6 +78,42 @@ def profit_by_product():
         raise CustomException(e, sys)
 
 
+def return_loss_by_product():
+    """Return the return losses for each product, biggest loss first.
+
+    Loss is split into three parts:
+      rto_loss      - product cost lost on RTO orders that cannot be resold
+      charge_loss   - return charges paid to the platform on customer returns
+      damage_loss   - product cost lost on customer returns that cannot be resold
+    """
+    try:
+        products = {}
+        for order in get_orders():
+            p = products.setdefault(order["name"], {"name": order["name"], "orders": 0, "rto": 0,
+                                                    "customer_return": 0, "rto_loss": 0,
+                                                    "charge_loss": 0, "damage_loss": 0})
+            p["orders"] += 1
+            if order["status"] == "delivered":
+                continue
+            made_cost = order["manufacturing_cost"] + order["packaging_cost"]
+            lost_product = 0 if order["resalable"] else made_cost
+            p[order["status"]] += 1
+            if order["status"] == "rto":
+                p["rto_loss"] += lost_product
+            else:
+                p["charge_loss"] += order["return_charge"]
+                p["damage_loss"] += lost_product
+        rows = list(products.values())
+        for p in rows:
+            p["total_loss"] = p["rto_loss"] + p["charge_loss"] + p["damage_loss"]
+            p["return_rate_pct"] = round((p["rto"] + p["customer_return"]) / p["orders"] * 100, 1)
+        return sorted(rows, key=lambda p: p["total_loss"], reverse=True)
+    except Exception as e:
+        raise CustomException(e, sys)
+
+
+
+
 if __name__ == "__main__":
     s = profit_summary()
     print("Dashboard Sales:", s["dashboard_sales"])
@@ -89,7 +125,10 @@ if __name__ == "__main__":
     print()
     for p in profit_by_product():
         print(f"{p['name']:<26} profit={p['net_profit']:<8} margin={p['margin_pct']}%  rto={p['rto']} customer_return={p['customer_return']}")
-        
+    print()
+    print("Return loss by product:")
+    for p in return_loss_by_product():
+        print(f"{p['name']:<26} total={p['total_loss']:<6} rto={p['rto_loss']:<5} charge={p['charge_loss']:<5} damage={p['damage_loss']:<5} return_rate={p['return_rate_pct']}%")
 
 
 # Run:  uv run python calculations.py 
