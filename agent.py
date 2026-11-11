@@ -26,7 +26,7 @@ Goal: find where the seller loses money and how to increase profit.
 
 Rules:
 - Always use the tools to get numbers. Never calculate or guess numbers yourself.
-- Write every amount in Indian rupees using the symbol ₹ (never $).
+- Write every amount in Indian rupees using the symbol ₹ (never $) and the Indian digit grouping, for example ₹1,15,177.
 - First look at the overall profit, then the profit and the return loss for each product.
 - Use simulate_return_reduction to estimate how much money a suggestion can save.
 - When several tools do not depend on each other, call them together in the same step.
