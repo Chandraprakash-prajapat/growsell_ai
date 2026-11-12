@@ -1,8 +1,9 @@
+import pandas as pd
 import streamlit as st
 
 from auth import require_seller_login
 from calculations import return_loss_by_product
-from ui import callout, card, data_table, donut, kpi_card, page_header, rupees, stacked_rows
+from ui import donut, kpi_card, page_header, rupees, tile, tile_head, callout
 
 RTO_COLOR, CHARGE_COLOR, DAMAGE_COLOR = "#F59E0B", "#6366F1", "#EF4444"
 
@@ -15,39 +16,60 @@ charge_loss = sum(r["charge_loss"] for r in rows)
 damage_loss = sum(r["damage_loss"] for r in rows)
 total_loss = rto_loss + charge_loss + damage_loss
 
+# ---- Row 1: the key numbers (the first one is the big tile)
 cards = [
+    kpi_card("wallet", "Total return loss", rupees(total_loss), "RTO + charges + damaged", "red", accent=True),
     kpi_card("box", "RTO loss", rupees(rto_loss), "Cancelled, cannot be resold", "amber"),
     kpi_card("refund", "Return charges", rupees(charge_loss), "Paid on customer returns", "indigo"),
     kpi_card("alert", "Damaged / unsellable", rupees(damage_loss), "Product cost lost", "red"),
-    kpi_card("wallet", "Total return loss", rupees(total_loss), "", "red"),
 ]
-for column, html in zip(st.columns(4), cards):
+for column, html in zip(st.columns([1.5, 1, 1, 1]), cards):
     column.markdown(html, unsafe_allow_html=True)
 
-worst = rows[0]
-st.markdown(callout(
-    f"Biggest loss: <b>{worst['name']}</b> lost <b>{rupees(worst['total_loss'])}</b>, and "
-    f"{worst['return_rate_pct']}% of its orders came back.", "amber"), unsafe_allow_html=True)
-
-series = [("RTO loss", RTO_COLOR), ("Return charges", CHARGE_COLOR), ("Damaged", DAMAGE_COLOR)]
-product_rows = [(r["name"], [r["rto_loss"], r["charge_loss"], r["damage_loss"]],
-                 f"{r['return_rate_pct']}% of orders returned") for r in rows]
+# ---- Row 2: loss by product (big tile) + insight and loss by type
+df = pd.DataFrame(rows).rename(columns={
+    "name": "Product", "orders": "Orders", "rto": "RTO", "customer_return": "Customer return",
+    "rto_loss": "RTO loss (₹)", "charge_loss": "Return charges (₹)",
+    "damage_loss": "Damaged (₹)", "total_loss": "Total loss (₹)", "return_rate_pct": "Return rate %"})
+loss_columns = ["RTO loss (₹)", "Return charges (₹)", "Damaged (₹)"]
 parts = [("RTO loss", rto_loss, RTO_COLOR), ("Return charges", charge_loss, CHARGE_COLOR),
          ("Damaged", damage_loss, DAMAGE_COLOR)]
+type_csv = pd.DataFrame([{"Type": label, "Amount (₹)": value} for label, value, _ in parts]).to_csv(index=False)
+worst = rows[0]
 
 left, right = st.columns([3, 2])
-left.markdown(card("Loss by product", "Biggest loss first", stacked_rows(product_rows, series)),
-              unsafe_allow_html=True)
-right.markdown(card("Loss by type", "What kind of loss it is", donut(parts, rupees(total_loss), "total loss")),
-               unsafe_allow_html=True)
+with left:
+    with tile("by-product"):
+        tile_head("Loss by product", "Biggest loss first (use the icon on the chart to open it full screen)")
+        st.bar_chart(df.set_index("Product")[loss_columns], color=[RTO_COLOR, CHARGE_COLOR, DAMAGE_COLOR],
+                     horizontal=True, height=440)
+        st.download_button("Download CSV", df[["Product"] + loss_columns].to_csv(index=False),
+                           "loss_by_product.csv", "text/csv", key="download_loss")
+with right:
+    with tile("worst"):
+        tile_head("Biggest loss", "The product to fix first")
+        st.markdown(f'<div class="stat-big amber">{rupees(worst["total_loss"])}</div>'
+                    f'<div class="stat-text"><b>{worst["name"]}</b> lost this much, and '
+                    f'{worst["return_rate_pct"]}% of its orders came back.</div>', unsafe_allow_html=True)
+    with tile("by-type"):
+        tile_head("Loss by type", "What kind of loss it is")
+        st.markdown(donut(parts, rupees(total_loss), "total loss"), unsafe_allow_html=True)
+        st.download_button("Download CSV", type_csv, "loss_by_type.csv", "text/csv", key="download_type")
 
-st.subheader("Product details")
-st.markdown(data_table(rows, [
-    ("Product", "name", "text"), ("Orders", "orders", "int"), ("RTO", "rto", "int"),
-    ("Customer return", "customer_return", "int"), ("RTO loss", "rto_loss", "money"),
-    ("Return charges", "charge_loss", "money"), ("Damaged", "damage_loss", "money"),
-    ("Total loss", "total_loss", "money"), ("Return rate", "return_rate_pct", "pct")],
-    pct_max=max(max(row["return_rate_pct"] for row in rows), 1)), unsafe_allow_html=True)
+# ---- Row 3: the full table (sort, search, download and full screen work as usual)
+with tile("table"):
+    tile_head("Product details", "Click a column to sort. Use the icons on the top right of the table to search, download or open it full screen.")
+    st.dataframe(
+        df, hide_index=True,
+        column_config={
+            "RTO loss (₹)": st.column_config.NumberColumn(format="₹%d"),
+            "Return charges (₹)": st.column_config.NumberColumn(format="₹%d"),
+            "Damaged (₹)": st.column_config.NumberColumn(format="₹%d"),
+            "Total loss (₹)": st.column_config.NumberColumn(format="₹%d"),
+            "Return rate %": st.column_config.ProgressColumn(
+                format="%.1f%%", min_value=0, max_value=max(float(df["Return rate %"].max()), 1.0)),
+        },
+    )
 
 with st.expander("What each loss means"):
     st.markdown("""

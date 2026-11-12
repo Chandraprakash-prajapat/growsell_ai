@@ -100,6 +100,17 @@ footer { visibility: hidden; }
         margin-left: 8px; vertical-align: middle; overflow: hidden; }
 .mini i { display: block; height: 100%; background: #6366F1; border-radius: 4px; }
 
+div[class*="st-key-tile-"] { background: var(--gs-card); border: 1px solid var(--gs-line); border-radius: 20px;
+                             padding: 18px 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+div[class*="st-key-tile-feature"] { min-height: 235px; }
+.tone-glass { background: rgba(255,255,255,0.22); }
+.kpi.accent { background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%) !important; border-color: rgba(255,255,255,0.3) !important; color: #FFFFFF !important; }
+.kpi.accent .kpi-label, .kpi.accent .kpi-note { color: #FFFFFF !important; opacity: 0.85; }
+.kpi.accent .kpi-value { color: #FFFFFF !important; font-size: 2.15rem; }
+.kpi.accent .chip { background: rgba(255,255,255,0.22); color: #FFFFFF; }
+.stat-big { font-size: 2.6rem; font-weight: 750; letter-spacing: -0.03em; line-height: 1.1; color: #6366F1; }
+.stat-big.amber { color: #F59E0B; }
+.stat-text { opacity: 0.8; line-height: 1.5; margin-top: 4px; }
 .report p { margin: 0.2rem 0 0.7rem 0; line-height: 1.6; }
 .report ol, .report ul { margin: 0.2rem 0 0.8rem 1.2rem; padding: 0; line-height: 1.6; }
 .act-title { font-weight: 650; }
@@ -131,6 +142,9 @@ DARK_CSS = """
 [data-testid="stVerticalBlockBorderWrapper"] { border-color: rgba(250,250,250,0.18) !important; }
 [data-testid="stForm"] { border-color: rgba(250,250,250,0.18) !important; }
 [data-testid="stAlert"] * { color: #FAFAFA !important; }
+[data-testid="stVegaLiteChart"], [data-testid="stArrowVegaLiteChart"], [data-testid="stDataFrame"] { filter: invert(0.92) hue-rotate(180deg) brightness(1.1); }
+[data-testid="stDownloadButton"] button { background: #21262D !important; color: #FAFAFA !important; border: 1px solid #3B434E !important; }
+div[role="dialog"] { background: #161B22 !important; }
 </style>
 """
 
@@ -153,13 +167,13 @@ SPATIAL_CSS = """
 }
 .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp li, .stApp label, .stApp button, .stApp input { font-family: inherit !important; }
 
-.kpi, .gs-card, .tbl-wrap, [data-testid="stExpander"] details, [data-testid="stForm"] {
+.kpi, .gs-card, .tbl-wrap, div[class*="st-key-tile-"], [data-testid="stExpander"] details, [data-testid="stForm"] {
     background: var(--gs-card) !important; border: 1px solid var(--gs-glass-border) !important; border-radius: 24px !important;
     -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%);
     box-shadow: var(--gs-shadow), var(--gs-highlight) !important;
     transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
-.kpi:hover, .gs-card:hover { transform: translateY(-4px); box-shadow: 0 24px 54px rgba(60,70,160,0.22), var(--gs-highlight) !important; }
+.kpi:hover, .gs-card:hover, div[class*="st-key-tile-"]:hover { transform: translateY(-3px); box-shadow: 0 24px 54px rgba(60,70,160,0.22), var(--gs-highlight) !important; }
 .callout { border-radius: 18px; -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: var(--gs-shadow); }
 
 .hero { border: 1px solid rgba(255,255,255,0.35); border-radius: 30px;
@@ -180,7 +194,7 @@ SPATIAL_CSS = """
 [data-testid="stSidebarNav"] a { border-radius: 14px !important; }
 [data-testid="stSidebarNav"] a[aria-current="page"] { background: rgba(99,102,241,0.18) !important; box-shadow: var(--gs-highlight); }
 
-.stButton > button, [data-testid="stFormSubmitButton"] > button {
+.stButton > button, [data-testid="stFormSubmitButton"] > button, [data-testid="stDownloadButton"] button {
     border-radius: 999px !important; background: var(--gs-card) !important; border: 1px solid var(--gs-glass-border) !important;
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 6px 16px rgba(60,70,160,0.14), var(--gs-highlight);
     transition: transform 0.2s ease, box-shadow 0.2s ease; }
@@ -205,7 +219,7 @@ SPATIAL_DARK_CSS = """
         #090C17 !important;
     background-attachment: fixed !important;
 }
-.kpi:hover, .gs-card:hover { box-shadow: 0 26px 60px rgba(0,0,0,0.55), var(--gs-highlight) !important; }
+.kpi:hover, .gs-card:hover, div[class*="st-key-tile-"]:hover { box-shadow: 0 26px 60px rgba(0,0,0,0.55), var(--gs-highlight) !important; }
 .stButton > button, [data-testid="stFormSubmitButton"] > button { background: rgba(255,255,255,0.09) !important; border: 1px solid rgba(255,255,255,0.20) !important; color: #FAFAFA !important; }
 .stButton > button[kind="primary"], button[data-testid="stBaseButton-primary"], [data-testid="stFormSubmitButton"] > button[kind="primary"] {
     background: linear-gradient(135deg, #6366F1, #8B5CF6) !important; color: #FFFFFF !important; }
@@ -275,11 +289,14 @@ def card(title, subtitle, body, tall=False):
             f'<div class="gs-sub">{escape(subtitle)}</div>{body}</div>')
 
 
-def kpi_card(icon_name, label, value, note="", tone="indigo", chip=""):
-    """A number with a label and an icon."""
+def kpi_card(icon_name, label, value, note="", tone="indigo", chip="", accent=False):
+    """A number with a label and an icon. accent=True makes it the big highlighted tile."""
+    if accent:
+        tone = "glass"
     note_html = f'<div class="kpi-note">{escape(note)}</div>' if note else ""
     chip_html = f'<div class="chip">{escape(chip)}</div>' if chip else ""
-    return (f'<div class="kpi">{icon(icon_name, tone)}<div><div class="kpi-label">{escape(label)}</div>'
+    css = "kpi accent" if accent else "kpi"
+    return (f'<div class="{css}">{icon(icon_name, tone)}<div><div class="kpi-label">{escape(label)}</div>'
             f'<div class="kpi-value">{value}</div>{note_html}{chip_html}</div></div>')
 
 
@@ -419,3 +436,17 @@ def action_card(title, note, done=False):
     check = "✅ " if done else ""
     css = "act-title done" if done else "act-title"
     return f'<div class="gs-card"><div class="{css}">{check}{escape(title)}</div><div class="gs-sub" style="margin-bottom:0">{escape(note)}</div></div>'
+
+
+def tile(name):
+    """A bento tile: a glass panel that can hold any Streamlit element (chart, table, button)."""
+    try:
+        return st.container(key=f"tile-{name}")
+    except TypeError:                       # very old Streamlit without container keys
+        return st.container(border=True)
+
+
+def tile_head(title, subtitle=""):
+    """Title and small description at the top of a tile."""
+    sub = f'<div class="gs-sub">{escape(subtitle)}</div>' if subtitle else ""
+    st.markdown(f'<div class="gs-title">{escape(title)}</div>{sub}', unsafe_allow_html=True)

@@ -1,32 +1,32 @@
+import pandas as pd
 import streamlit as st
 
 from auth import require_seller_login
 from calculations import profit_by_product, profit_summary
-from ui import bar_rows, callout, card, data_table, kpi_card, page_header, rupees, waterfall
+from ui import kpi_card, page_header, rupees, tile, tile_head, waterfall
 
 require_seller_login()          # stops the page here until the seller logs in
 page_header("Profit Calculator", "What you really earn after returns, cancelled orders and shipping.")
 
 s = profit_summary()
 products = profit_by_product()
+gap = s["dashboard_sales"] - s["sales"]
+gap_pct = gap / s["dashboard_sales"] * 100 if s["dashboard_sales"] else 0
+costs = s["sales"] - s["delivered_profit"]          # product, packaging and shipping cost of delivered orders
 
+# ---- Row 1: the key numbers (the first one is the big tile)
 cards = [
+    kpi_card("trend", "Net profit", rupees(s["net_profit"]), "What you really keep", "green",
+             chip=f"{s['margin_pct']}% margin", accent=True),
     kpi_card("cart", "Dashboard sales", rupees(s["dashboard_sales"]), "All orders, even returned ones", "indigo"),
     kpi_card("check", "Actual sales", rupees(s["sales"]), f"{s['delivered']} delivered orders", "blue"),
     kpi_card("refund", "Return loss", rupees(s["return_loss"]),
              f"{s['rto']} RTO and {s['customer_return']} customer returns", "red"),
-    kpi_card("trend", "Net profit", rupees(s["net_profit"]), "", "green", chip=f"{s['margin_pct']}% margin"),
 ]
-for column, html in zip(st.columns(4), cards):
+for column, html in zip(st.columns([1.5, 1, 1, 1]), cards):
     column.markdown(html, unsafe_allow_html=True)
 
-gap = s["dashboard_sales"] - s["sales"]
-gap_pct = gap / s["dashboard_sales"] * 100 if s["dashboard_sales"] else 0
-st.markdown(callout(
-    f"Your dashboard shows <b>{rupees(s['dashboard_sales'])}</b> in sales, but only <b>{rupees(s['sales'])}</b> "
-    f"was actually delivered. <b>{rupees(gap)}</b> ({gap_pct:.0f}%) never became income."), unsafe_allow_html=True)
-
-costs = s["sales"] - s["delivered_profit"]          # product, packaging and shipping cost of delivered orders
+# ---- Row 2: money flow (big tile) + two smaller tiles
 steps = [
     ("Dashboard sales", s["dashboard_sales"], "total"),
     ("Cancelled and returned orders", -gap, "neg"),
@@ -34,19 +34,41 @@ steps = [
     ("Return loss", -s["return_loss"], "neg"),
     ("Net profit", s["net_profit"], "final"),
 ]
-product_rows = [(p["name"], p["net_profit"], f"{p['margin_pct']}% margin · {p['orders']} orders") for p in products]
+flow_csv = pd.DataFrame([{"Step": label, "Amount (₹)": value} for label, value, _ in steps]).to_csv(index=False)
+chart_data = pd.DataFrame(products).set_index("name")[["net_profit"]].rename(columns={"net_profit": "Net profit (₹)"})
 
 left, right = st.columns([3, 2])
-left.markdown(card("Where your sales money goes", "From dashboard sales to the profit you keep", waterfall(steps)),
-              unsafe_allow_html=True)
-right.markdown(card("Net profit by product", "Highest first", bar_rows(product_rows, "#10B981")),
-               unsafe_allow_html=True)
+with left:
+    with tile("flow"):
+        tile_head("Where your sales money goes", "From dashboard sales to the profit you keep")
+        st.markdown(waterfall(steps, height=300), unsafe_allow_html=True)
+        st.download_button("Download CSV", flow_csv, "money_flow.csv", "text/csv", key="download_flow")
+with right:
+    with tile("reality"):
+        tile_head("Reality check", "Dashboard sales vs delivered sales")
+        st.markdown(f'<div class="stat-big amber">{gap_pct:.0f}%</div>'
+                    f'<div class="stat-text">of your dashboard sales (<b>{rupees(gap)}</b>) never became income. '
+                    f'Your dashboard shows <b>{rupees(s["dashboard_sales"])}</b>, but only <b>{rupees(s["sales"])}</b> '
+                    f'was delivered.</div>', unsafe_allow_html=True)
+    with tile("by-product"):
+        tile_head("Net profit by product", "Highest first")
+        st.bar_chart(chart_data, color="#10B981", horizontal=True, height=240)
 
-st.subheader("Product details")
-st.markdown(data_table(products, [
-    ("Product", "name", "text"), ("Orders", "orders", "int"), ("Delivered", "delivered", "int"),
-    ("RTO", "rto", "int"), ("Customer return", "customer_return", "int"), ("Sales", "sales", "money"),
-    ("Net profit", "net_profit", "money"), ("Margin", "margin_pct", "pct")]), unsafe_allow_html=True)
+# ---- Row 3: the full table (sort, search, download and full screen work as usual)
+df = pd.DataFrame(products).rename(columns={
+    "name": "Product", "orders": "Orders", "delivered": "Delivered", "rto": "RTO",
+    "customer_return": "Customer return", "sales": "Sales (₹)",
+    "net_profit": "Net profit (₹)", "margin_pct": "Margin %"})
+with tile("table"):
+    tile_head("Product details", "Click a column to sort. Use the icons on the top right of the table to search, download or open it full screen.")
+    st.dataframe(
+        df, hide_index=True,
+        column_config={
+            "Sales (₹)": st.column_config.NumberColumn(format="₹%d"),
+            "Net profit (₹)": st.column_config.NumberColumn(format="₹%d"),
+            "Margin %": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+        },
+    )
 
 with st.expander("How the calculation works"):
     st.markdown("""
