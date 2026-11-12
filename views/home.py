@@ -18,8 +18,8 @@ with steps_col:
     with tile("steps"):
         tile_head("How it works", "Three simple steps")
         st.markdown(
-            '<div class="step"><div class="num">1</div><p><b>Your orders</b> are stored with the product cost, '
-            'shipping and return details.</p></div>'
+            '<div class="step"><div class="num">1</div><p><b>You upload</b> your Meesho payments report and type '
+            'your product cost.</p></div>'
             '<div class="step"><div class="num">2</div><p><b>Python does the maths</b>, so every number is exact.</p></div>'
             '<div class="step"><div class="num">3</div><p><b>The AI agent</b> reads the numbers and suggests the '
             'top actions with the expected savings.</p></div>',
@@ -45,5 +45,9 @@ for column, (icon_name, tone, title, text, path, label) in zip(st.columns(3), fe
                         unsafe_allow_html=True)
             st.page_link(path, label=label)
 
-st.caption("This demo uses sample data only. Seller tools need a password. "
-           "Use the toggles in the sidebar for Dark mode and the Spatial glass look.")
+import data_store
+if data_store.has_real():
+    st.caption(f"Showing YOUR data from {data_store.get_state()['file_name']}. It stays in memory only.")
+else:
+    st.caption("Showing demo data. Open Upload My Data to analyse your own Meesho payments report. "
+               "Seller tools need a password. Use the toggles in the sidebar for Dark mode and the Spatial glass look.")

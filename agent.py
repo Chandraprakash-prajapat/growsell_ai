@@ -19,7 +19,8 @@ load_dotenv()
 logger = get_logger(__name__)
 
 MODEL = "openai/gpt-oss-20b"
-MAX_STEPS = 15         # safety limit: the agent cannot loop forever
+MAX_STEPS = 8          # safety limit: the agent cannot loop forever
+TOP_PRODUCTS = 6       # tools send only the most important products, so the model reads less and answers faster
 
 SYSTEM_PROMPT = """You are a business advisor for an Indian e-commerce seller who sells photo frames on Meesho.
 Goal: find where the seller loses money and how to increase profit.
@@ -34,7 +35,9 @@ Rules:
   with high damage loss; making custom frames only after the customer confirms a preview (custom frames
   cannot be resold, so their RTO loss is the full product cost); fixing the products with the highest
   return rate or lowest margin.
-- Call several independent tools together in one step to save time.
+- Be fast. Plan: step 1 call get_profit_summary, get_profit_by_product and get_return_loss_by_product together;
+  step 2 call simulate_return_reduction for the 3 products with the biggest loss, all together;
+  step 3 call save_action_item three times, all together; then write the report. Do not call any other tools.
 - Suggestions must be concrete and based on the data. Useful ideas: better packaging when the damaged loss is high,
   asking the customer to confirm the preview before making a custom frame when the RTO loss is high,
   fixing the product that has the highest return rate.
@@ -52,12 +55,18 @@ def tool_get_profit_summary(**_):
     return profit_summary()
 
 
+def _top(rows, count=TOP_PRODUCTS):
+    """Keep only the first `count` rows (the lists are already sorted), and say how many exist."""
+    return {"total_products": len(rows), "shown": min(count, len(rows)), "products": rows[:count]}
+
+
 def tool_get_profit_by_product(**_):
-    return profit_by_product()
+    rows = profit_by_product()                       # most profitable first
+    return {"total_products": len(rows), "best": rows[:3], "worst": rows[-3:] if len(rows) > 3 else []}
 
 
 def tool_get_return_loss_by_product(**_):
-    return return_loss_by_product()
+    return _top(return_loss_by_product())            # biggest loss first
 
 
 def tool_simulate_return_reduction(product_name, reduction_pct):
@@ -120,6 +129,24 @@ def run_tool(name, arguments):
 
 # ---------- The agent loop ----------
 
+_USE_EFFORT = True
+
+
+def _chat(client, messages, tools=None):
+    """Call the model. A low reasoning effort makes gpt-oss answer much faster."""
+    options = {"model": MODEL, "messages": messages}
+    if tools:
+        options["tools"] = tools
+    global _USE_EFFORT
+    if _USE_EFFORT:
+        try:
+            return client.chat.completions.create(reasoning_effort="low", **options).choices[0].message
+        except Exception as e:                       # the option may be rejected: stop using it from now on
+            logger.warning(f"Not using reasoning_effort any more: {e}")
+            _USE_EFFORT = False
+    return client.chat.completions.create(**options).choices[0].message
+
+
 def run_agent(task="Analyze my business and tell me how to increase my profit."):
     """Run the agent. Returns the final report text and the list of tools it used."""
     try:
@@ -129,7 +156,7 @@ def run_agent(task="Analyze my business and tell me how to increase my profit.")
         tools_used = []
 
         for step in range(MAX_STEPS):
-            reply = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOLS).choices[0].message
+            reply = _chat(client, messages, TOOLS)
             if not reply.tool_calls:                       # no more tools needed: this is the final report
                 logger.info(f"Agent finished in {step + 1} steps, tools used: {tools_used}")
                 return reply.content, tools_used
@@ -141,7 +168,7 @@ def run_agent(task="Analyze my business and tell me how to increase my profit.")
 
         # Step limit reached: ask for the final report without allowing more tools
         messages.append({"role": "user", "content": "Write the final report now, using only the numbers you already have."})
-        final = client.chat.completions.create(model=MODEL, messages=messages).choices[0].message
+        final = _chat(client, messages)
         logger.info("Agent hit the step limit, final report was forced")
         return final.content, tools_used
     except Exception as e:

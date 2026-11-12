@@ -12,7 +12,8 @@ s = profit_summary()
 products = profit_by_product()
 gap = s["dashboard_sales"] - s["sales"]
 gap_pct = gap / s["dashboard_sales"] * 100 if s["dashboard_sales"] else 0
-costs = s["sales"] - s["delivered_profit"]          # product, packaging and shipping cost of delivered orders
+costs = s["sales"] - s["delivered_profit"]          # product cost plus shipping and fees of delivered orders
+other = s["ads_cost"] - s["adjustments"]            # ads minus claims and compensation (0 for demo data)
 
 # ---- Row 1: the key numbers (the first one is the big tile)
 cards = [
@@ -30,10 +31,14 @@ for column, html in zip(st.columns([1.5, 1, 1, 1]), cards):
 steps = [
     ("Dashboard sales", s["dashboard_sales"], "total"),
     ("Cancelled and returned orders", -gap, "neg"),
-    ("Product, packing and shipping", -costs, "neg"),
+    ("Product cost, shipping and fees", -costs, "neg"),
     ("Return loss", -s["return_loss"], "neg"),
-    ("Net profit", s["net_profit"], "final"),
 ]
+if other > 0:
+    steps.append(("Ads cost, net of claims", -other, "neg"))
+elif other < 0:
+    steps.append(("Claims and compensation", -other, "pos"))
+steps.append(("Net profit", s["net_profit"], "final"))
 flow_csv = pd.DataFrame([{"Step": label, "Amount (₹)": value} for label, value, _ in steps]).to_csv(index=False)
 chart_data = pd.DataFrame(products).set_index("name")[["net_profit"]].rename(columns={"net_profit": "Net profit (₹)"})
 
@@ -72,9 +77,9 @@ with tile("table"):
 
 with st.expander("How the calculation works"):
     st.markdown("""
-- **Delivered order:** selling price − manufacturing cost − packaging − shipping
+- **Delivered order:** selling price − product cost − shipping, TCS and TDS that Meesho deducted
 - **RTO** (cancelled before delivery): a normal frame can be resold, so the loss is 0. A custom frame cannot be resold, so its manufacturing cost + packaging is lost.
 - **Customer return:** the return charge. If the frame came back damaged or is custom, its manufacturing cost + packaging is lost too.
-- **Net profit** = profit from delivered orders − return loss
+- **Net profit** = profit from delivered orders − return loss − ads cost + claims and compensation (ads and claims appear only with your uploaded Meesho data)
 - **Margin %** = net profit ÷ actual sales × 100
 """)

@@ -1,6 +1,12 @@
+"""Business calculations: profit and return losses. Plain Python math, no AI.
+
+Run:  uv run python calculations.py
+"""
 import sys
 
 from db import connect
+import data_store
+import meesho_payments
 from src.exception import CustomException
 from src.logger import get_logger
 
@@ -8,7 +14,12 @@ logger = get_logger(__name__)
 
 
 def get_orders():
-    """Return all orders together with their product details."""
+    """Return all orders together with their product details.
+
+    Uses the seller's uploaded Meesho data when there is any, otherwise the demo data.
+    """
+    if data_store.has_real():
+        return meesho_payments.real_orders()
     conn = connect()
     rows = conn.execute("""SELECT o.id, o.status, o.shipping_cost, o.return_charge, o.resalable,
                                   p.id AS product_id, p.name, p.selling_price,
@@ -41,16 +52,20 @@ def profit_summary():
     try:
         orders = get_orders()
         s = {"total_orders": len(orders), "delivered": 0, "rto": 0, "customer_return": 0,
-             "dashboard_sales": 0, "sales": 0, "delivered_profit": 0, "return_loss": 0}
+             "dashboard_sales": 0, "sales": 0, "delivered_profit": 0, "return_loss": 0,
+             "ads_cost": 0, "adjustments": 0}
         for order in orders:
             result = order_result(order)
             s[order["status"]] += 1
-            s["dashboard_sales"] += order["selling_price"]       # sales as the dashboard shows them (all orders)
+            s["dashboard_sales"] += order.get("dashboard_price", order["selling_price"])   # sales as the dashboard shows them
             s["sales"] += result["sales"]                        # actual sales (delivered orders only)
             s["return_loss"] += result["loss"]
             if order["status"] == "delivered":
                 s["delivered_profit"] += result["profit"]
-        s["net_profit"] = s["delivered_profit"] - s["return_loss"]
+        if data_store.has_real():                                 # costs that are not tied to one order
+            s["ads_cost"] = data_store.get_state()["ads_cost"]
+            s["adjustments"] = meesho_payments.adjustments()      # claims, compensation, recoveries
+        s["net_profit"] = round(s["delivered_profit"] - s["return_loss"] - s["ads_cost"] + s["adjustments"], 2)
         s["margin_pct"] = round(s["net_profit"] / s["sales"] * 100, 1) if s["sales"] else 0
         logger.info(f"profit_summary: net_profit={s['net_profit']} margin={s['margin_pct']}%")
         return s
@@ -63,7 +78,7 @@ def profit_by_product():
     try:
         products = {}
         for order in get_orders():
-            p = products.setdefault(order["name"], {"name": order["name"], "orders": 0, "delivered": 0,
+            p = products.setdefault(order.get("sku", order["name"]), {"name": order["name"], "orders": 0, "delivered": 0,
                                                     "rto": 0, "customer_return": 0, "sales": 0, "net_profit": 0})
             result = order_result(order)
             p["orders"] += 1
@@ -89,7 +104,7 @@ def return_loss_by_product():
     try:
         products = {}
         for order in get_orders():
-            p = products.setdefault(order["name"], {"name": order["name"], "orders": 0, "rto": 0,
+            p = products.setdefault(order.get("sku", order["name"]), {"name": order["name"], "orders": 0, "rto": 0,
                                                     "customer_return": 0, "rto_loss": 0,
                                                     "charge_loss": 0, "damage_loss": 0})
             p["orders"] += 1
@@ -112,8 +127,6 @@ def return_loss_by_product():
         raise CustomException(e, sys)
 
 
-
-
 if __name__ == "__main__":
     s = profit_summary()
     print("Dashboard Sales:", s["dashboard_sales"])
@@ -129,6 +142,3 @@ if __name__ == "__main__":
     print("Return loss by product:")
     for p in return_loss_by_product():
         print(f"{p['name']:<26} total={p['total_loss']:<6} rto={p['rto_loss']:<5} charge={p['charge_loss']:<5} damage={p['damage_loss']:<5} return_rate={p['return_rate_pct']}%")
-
-
-# Run:  uv run python calculations.py 

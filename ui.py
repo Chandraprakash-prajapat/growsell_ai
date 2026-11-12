@@ -258,8 +258,7 @@ def inject_css(dark=False, spatial=False):
 
 
 def page_header(title, subtitle):
-    """Badge, title and one-line description."""
-    st.markdown('<span class="badge">Sample data · demo only</span>', unsafe_allow_html=True)
+    """Title and one-line description."""
     st.title(title)
     st.caption(subtitle)
 
@@ -340,16 +339,19 @@ def waterfall(steps, height=210):
         if kind == "neg":
             low, high = running + value, running
             running += value
+        elif kind == "pos":
+            low, high = running, running + value
+            running += value
         else:
             low, high = 0, value
             running = value
         bars.append((label, value, kind, low, high))
-        top = max(top, high)
+        top = max(top, high, running)
     top = top or 1
-    colors = {"total": "#6366F1", "neg": "#F87171", "final": "#10B981"}
+    colors = {"total": "#6366F1", "neg": "#F87171", "pos": "#34D399", "final": "#10B981"}
     html = []
     for label, value, kind, low, high in bars:
-        text = ("−" + rupees(abs(value))) if kind == "neg" else rupees(value)
+        text = ("−" + rupees(abs(value))) if kind == "neg" else (("+" + rupees(value)) if kind == "pos" else rupees(value))
         html.append(f'<div class="wf-col"><div class="wf-val">{text}</div>'
                     f'<div class="wf-track" style="height:{height}px"><div class="wf-bar" '
                     f'style="bottom:{low / top * 100:.2f}%;height:{max((high - low) / top * 100, 0.8):.2f}%;'

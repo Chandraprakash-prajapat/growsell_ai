@@ -5,5 +5,6 @@ __pycache__/
 *.db
 logs/
 *.csv
+*.xlsx
 data/.
 growsell.db
